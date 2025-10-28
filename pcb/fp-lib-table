@@ -1,0 +1,5 @@
+(fp_lib_table
+  (version 7)
+  (lib (name "local-library")(type "KiCad")(uri "${KIPRJMOD}/local-library.pretty")(options "")(descr "")(disabled))
+  (lib (name "TL1105AF160Q")(type "KiCad")(uri "${KIPRJMOD}/footprints/TL1105AF160Q/")(options "")(descr ""))
+)
