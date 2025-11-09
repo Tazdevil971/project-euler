@@ -276,16 +276,6 @@
 	)
 	(wire
 		(pts
-			(xy 59.69 29.21) (xy 83.82 29.21)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "1660573c-0bcb-421c-93e2-9eab515e0ec5")
-	)
-	(wire
-		(pts
 			(xy 151.13 67.31) (xy 153.67 67.31)
 		)
 		(stroke
@@ -356,6 +346,16 @@
 	)
 	(wire
 		(pts
+			(xy 59.69 29.21) (xy 83.82 29.21)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "6517c910-1f57-4939-bfdf-74ee033ca59b")
+	)
+	(wire
+		(pts
 			(xy 59.69 82.55) (xy 83.82 82.55)
 		)
 		(stroke
@@ -403,6 +403,16 @@
 			(type default)
 		)
 		(uuid "892a2edc-30f8-4fbb-905d-b8eacbddeda5")
+	)
+	(wire
+		(pts
+			(xy 59.69 31.75) (xy 83.82 31.75)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "8fa8d041-48ae-4b71-a73e-bd2809d190f6")
 	)
 	(wire
 		(pts
@@ -523,16 +533,6 @@
 			(type default)
 		)
 		(uuid "f21baef2-e324-42d8-8945-a790347a77f0")
-	)
-	(wire
-		(pts
-			(xy 59.69 31.75) (xy 83.82 31.75)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "f8104110-9ffc-4a44-9f3c-f200a470500c")
 	)
 	(symbol
 		(lib_id "Mechanical:MountingHole_Pad")
@@ -1082,7 +1082,7 @@
 			)
 		)
 		(instances
-			(project "head-tracker"
+			(project "project-euler"
 				(path "/e3362552-3508-4d8c-a74b-6e4b5fd45312"
 					(page "2")
 				)
@@ -1154,7 +1154,7 @@
 			)
 		)
 		(instances
-			(project "head-tracker"
+			(project "project-euler"
 				(path "/e3362552-3508-4d8c-a74b-6e4b5fd45312"
 					(page "3")
 				)
@@ -1326,7 +1326,7 @@
 			)
 		)
 		(instances
-			(project "head-tracker"
+			(project "project-euler"
 				(path "/e3362552-3508-4d8c-a74b-6e4b5fd45312"
 					(page "4")
 				)
@@ -1368,7 +1368,7 @@
 			)
 		)
 		(pin "BOOTN" input
-			(at 59.69 31.75 0)
+			(at 59.69 29.21 0)
 			(uuid "40284274-55c8-48f3-ad19-30d72ce8654c")
 			(effects
 				(font
@@ -1378,7 +1378,7 @@
 			)
 		)
 		(pin "~{INT}" output
-			(at 59.69 29.21 0)
+			(at 59.69 31.75 0)
 			(uuid "9e3c20c1-4fd0-4cc0-9b55-2eba7bceb601")
 			(effects
 				(font
@@ -1418,7 +1418,7 @@
 			)
 		)
 		(instances
-			(project "head-tracker"
+			(project "project-euler"
 				(path "/e3362552-3508-4d8c-a74b-6e4b5fd45312"
 					(page "5")
 				)

@@ -1,3 +1,17 @@
+# Ignore per-user vscode setting
+.vscode/settings.json
+.vscode/launch.json
+
+# Ignore clangd cache
+.cache/
+
+# gitignore template for esp-idf, the official development framework for ESP32
+# https://github.com/espressif/esp-idf
+
+build/
+sdkconfig
+sdkconfig.old
+
 # For PCBs designed using KiCad: https://www.kicad.org/
 # Format documentation: https://kicad.org/help/file-formats/
 

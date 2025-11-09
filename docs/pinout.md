@@ -18,6 +18,6 @@
 |GPIO18|Output, active low|USB keep awake||
 |GPIO19|I2C SDA|I2C normal bus (USB controller, BNO086)||
 |GPIO20|I2C SCL|I2C normal bus (USB controller, BNO086)||
-|GPIO21|Output, active high|BNO086 BOOTN||
-|GPIO22|Output, active low|BNO086 reset||
-|GPIO23|Input IRQ, active low, (open drain?)|BNO086 interrupt||
+|GPIO21|Input IRQ, active low, push-pull|BNO086 interrupt||
+|GPIO22|Output, active high|BNO086 BOOTN||
+|GPIO23|Output, active low|BNO086 reset||

@@ -2630,6 +2630,16 @@
 	)
 	(wire
 		(pts
+			(xy 238.76 97.79) (xy 243.84 97.79)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "71ef718e-0cb4-4900-94a1-05de9ed34099")
+	)
+	(wire
+		(pts
 			(xy 36.83 41.91) (xy 39.37 41.91)
 		)
 		(stroke
@@ -2830,6 +2840,16 @@
 	)
 	(wire
 		(pts
+			(xy 238.76 102.87) (xy 243.84 102.87)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "a1a95666-b356-4226-b847-e6a9732a40c6")
+	)
+	(wire
+		(pts
 			(xy 73.66 115.57) (xy 78.74 115.57)
 		)
 		(stroke
@@ -2937,16 +2957,6 @@
 			(type default)
 		)
 		(uuid "b68818cf-f8c0-42ef-a07d-413124a6da51")
-	)
-	(wire
-		(pts
-			(xy 238.76 97.79) (xy 243.84 97.79)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "ba217d5c-1fa4-4a94-96b8-b9c9d39956b3")
 	)
 	(wire
 		(pts
@@ -3167,16 +3177,6 @@
 			(type default)
 		)
 		(uuid "e5a249bb-fd0b-4e96-a64c-9ec600ee8e1b")
-	)
-	(wire
-		(pts
-			(xy 238.76 102.87) (xy 243.84 102.87)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "e7552ad1-14e1-456b-b7ea-d5bbc41f54db")
 	)
 	(wire
 		(pts
@@ -3430,7 +3430,7 @@
 	)
 	(hierarchical_label "IMU_BOOTN"
 		(shape output)
-		(at 243.84 97.79 0)
+		(at 243.84 102.87 0)
 		(effects
 			(font
 				(size 1.27 1.27)
@@ -3573,7 +3573,7 @@
 	)
 	(hierarchical_label "~{IMU_INT}"
 		(shape input)
-		(at 243.84 102.87 0)
+		(at 243.84 97.79 0)
 		(effects
 			(font
 				(size 1.27 1.27)
