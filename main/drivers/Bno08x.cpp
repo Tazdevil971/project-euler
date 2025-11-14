@@ -9,11 +9,11 @@ static const char *TAG = "Bno08x";
 
 using namespace euler;
 
-Bno08x::Bno08x() : irq_ev{xEventGroupCreate()} { assert(irq_ev != nullptr); }
+Bno08x::Bno08x() : events{xEventGroupCreate()} { assert(events != nullptr); }
 
-bool Bno08x::start(i2c_master_bus_handle_t bus, gpio_num_t intr,
-                   gpio_num_t reset, gpio_num_t bootn) {
-    if (is_start) return false;
+bool Bno08x::init(i2c_master_bus_handle_t bus, gpio_num_t intr,
+                  gpio_num_t reset, gpio_num_t bootn) {
+    if (is_init) return false;
 
     gpio_config_t reset_config = {};
     reset_config.pin_bit_mask = (1 << reset) | (1 << bootn);
@@ -32,7 +32,7 @@ bool Bno08x::start(i2c_master_bus_handle_t bus, gpio_num_t intr,
     intr_config.pull_up_en = GPIO_PULLUP_ENABLE;
     intr_config.intr_type = GPIO_INTR_NEGEDGE;
     assert(gpio_config(&intr_config) == ESP_OK);
-    assert(gpio_isr_handler_add(intr, on_irq, irq_ev) == ESP_OK);
+    assert(gpio_isr_handler_add(intr, on_irq, events) == ESP_OK);
 
     i2c_device_config_t dev_config = {};
     dev_config.dev_addr_length = I2C_ADDR_BIT_LEN_7;
@@ -42,53 +42,194 @@ bool Bno08x::start(i2c_master_bus_handle_t bus, gpio_num_t intr,
     dev_config.flags.disable_ack_check = false;
     assert(i2c_master_bus_add_device(bus, &dev_config, &dev_handle) == ESP_OK);
 
+    // Set the device in reset
     gpio_set_level(bootn, 0);
     gpio_set_level(reset, 0);
 
-    // Start up the device
-    gpio_set_level(bootn, 1);
-    gpio_set_level(reset, 1);
+    // Signal the bus as free
+    xEventGroupSetBits(events, FREE_EV);
+
+    // Start up the service handler
+    service.start("Bno08xService", 16 * 1024, 0, [this]() { service_func(); });
 
     this->intr = intr;
     this->reset = reset;
     this->bootn = bootn;
 
-    is_start = true;
+    is_init = true;
     return true;
 }
 
-void Bno08x::foo() {
-    // std::array<uint8_t, 6> bruh;
-    // bruh[0] = 6;
-    // bruh[1] = 0;
-    // bruh[2] = 2;
-    // bruh[3] = 0;
-    // bruh[4] = 0xf9;
-    // bruh[5] = 0;
-    // send_raw(bruh);
+bool Bno08x::start() {
+    if (!is_init) return false;
 
-    // xEventGroupWaitBits(irq_ev, 1, pdTRUE, pdTRUE, portMAX_DELAY);
-    // printf("AAA: %ld\n", xEventGroupGetBits(irq_ev));
+    acquire_bus();
 
-    recv(portMAX_DELAY);
+    // Start up the device
+    gpio_set_level(bootn, 1);
+    gpio_set_level(reset, 1);
+
+    // Wait for a "reset complete" message
+    while (1) {
+        recv(portMAX_DELAY, false);
+
+        if (header_in.chan == bno08x::channels::EXECUTABLE &&
+            header_in.len == 5 && cargo_in[4] == 1) {
+            break;
+        } else {
+            handle_generic();
+        }
+    }
+
+    release_bus();
+    return true;
 }
 
-void Bno08x::handle_chan0(std::span<const uint8_t> data) {
-    // Channel 0 is dedicated to control
-    if (data.size() < 1) {
-        ESP_LOGW(TAG, "");
-        return;
+bool Bno08x::enable_arvr_stabilized_rotation_vector(uint32_t report_interval) {
+    if (!is_init) return false;
+
+    acquire_bus();
+
+    std::array<uint8_t, bno08x::SetFeatureCommand::SIZE> buf;
+
+    bno08x::Header header{
+        .len = buf.size(),
+        .chan = bno08x::channels::SH2_CONTROL,
+        .seq = channels[bno08x::channels::SH2_CONTROL].seq_num_out++};
+
+    bno08x::SetFeatureCommand command{
+        .feature_report_id = bno08x::report_id::ARVR_STABILIZED_ROTATION_VECTOR,
+        .wake_up_enable = false,
+        .always_on_enable = false,
+        .report_interval = report_interval,
+        .batch_interval = 0,
+        .config_word = 0};
+
+    bno08x::SetFeatureCommand::write(header, command, buf);
+
+    send_raw(buf);
+
+    while (1) {
+        recv(portMAX_DELAY, false);
+
+        if (header_in.chan == bno08x::channels::SH2_CONTROL &&
+            header_in.len > 4 &&
+            cargo_in[4] == bno08x::report_id::GET_FEATURE_RESPONSE) {
+            break;
+        } else {
+            handle_generic();
+        }
+    }
+
+    release_bus();
+    return true;
+}
+
+void Bno08x::service_func() {
+    while (1) {
+        // Receive the data and acquire the bus
+        if (!recv(portMAX_DELAY, true)) {
+            // We release the bus anyway, even if we didn't acquire it, it's
+            // safe
+            release_bus();
+
+            ESP_LOGE(TAG, "Unexpected internal error while receiving");
+            // TODO: Should we reset the device if too many failures occur?
+            continue;
+        }
+
+        // Dispatch the event
+        handle_generic();
+
+        // Release the bus for other functions
+        release_bus();
     }
 }
 
-void Bno08x::handle_advertisement(std::span<const uint8_t> data) {
-    // TODO: If we really want to
-}
+void Bno08x::handle_generic() {
+    if (header_in.chan == bno08x::channels::INPUT_SENSOR_REPORTS ||
+        header_in.chan == bno08x::channels::WAKE_INPUT_SENSOR_REPORTS) {
+        // Process sensor data
+        size_t off = 4;
+        while ((header_in.len - off) >= 1) {
+            if (cargo_in[off] == bno08x::report_id::BASE_TIMESTAMP) {
+                // Base timestamp packet
+                if ((header_in.len - off) <
+                    bno08x::BaseTimestampReference::SIZE) {
+                    ESP_LOGE(TAG,
+                             "Invalid size for BaseTimestampReference packet");
+                    return;
+                }
 
-void Bno08x::handle_error_list(std::span<const uint8_t> data) {
-    for (size_t i = 0; i < data.size(); i++)
-        ESP_LOGW(TAG, "Device sent error: %s (code: %d)",
-                 device_error_to_str(data[i]), data[i]);
+                auto packet = bno08x::BaseTimestampReference::read(
+                    {cargo_in.begin() + off, cargo_in.end()});
+                ESP_LOGI(TAG, "Received BaseTimestampReference, base_delta: %lu",
+                         packet.base_delta);
+
+                off += bno08x::BaseTimestampReference::SIZE;
+            } else if (cargo_in[off] == bno08x::report_id::TIMESTAMP_REBASE) {
+                // Rebase timestamp packet
+                if ((header_in.len - off) <
+                    bno08x::RebaseTimestampReference::SIZE) {
+                    ESP_LOGE(
+                        TAG,
+                        "Invalid size for RebaseTimestampReference packet");
+                    return;
+                }
+
+                
+                auto packet = bno08x::RebaseTimestampReference::read(
+                    {cargo_in.begin() + off, cargo_in.end()});
+                    ESP_LOGI(TAG,
+                        "Received RebaseTimestampReference, rebase_delta: %lu",
+                        packet.rebase_delta);
+            
+                        off += bno08x::RebaseTimestampReference::SIZE;
+            } else if (cargo_in[off] ==
+                       bno08x::report_id::ARVR_STABILIZED_ROTATION_VECTOR) {
+                // Rebase timestamp packet
+                if ((header_in.len - off) <
+                    bno08x::ARVRStabilizedRotationVector::SIZE) {
+                    ESP_LOGE(
+                        TAG,
+                        "Invalid size for ARVRStabilizedRotationVector packet");
+                    return;
+                }
+
+                
+                auto packet = bno08x::ARVRStabilizedRotationVector::read(
+                    {cargo_in.begin() + off, cargo_in.end()});
+                    ESP_LOGI(TAG,
+                        "Received ARVRStabilizedRotationVector, x: %f, y: %f, "
+                        "z: %f, w: %f",
+                        packet.x, packet.y, packet.z, packet.w);
+                        off += bno08x::ARVRStabilizedRotationVector::SIZE;
+            } else {
+                ESP_LOGW(TAG, "Bruh: %d", cargo_in[off]);
+                return;
+            }
+        }
+    }
+
+    if (header_in.chan == bno08x::channels::SH2_CONTROL &&
+        header_in.len == 20 &&
+        cargo_in[4] == bno08x::report_id::COMMAND_RESPONSE) {
+        // This is a command response
+        ESP_LOGI(TAG, "Received a cargo on chan %d, len: %d, command id: %x",
+                 header_in.chan, header_in.len, cargo_in[6] & 0x7f);
+    } else if ((header_in.chan == bno08x::channels::SH2_CONTROL ||
+                header_in.chan == bno08x::channels::INPUT_SENSOR_REPORTS ||
+                header_in.chan ==
+                    bno08x::channels::WAKE_INPUT_SENSOR_REPORTS) &&
+               header_in.len >= 5) {
+        // This is a generic SH2 control message
+        ESP_LOGI(TAG, "Received a cargo on chan %d, len: %d, report id: %x",
+                 header_in.chan, header_in.len, cargo_in[4]);
+    } else {
+        // This is a generic command
+        ESP_LOGI(TAG, "Received a cargo on chan %d, len: %d", header_in.chan,
+                 header_in.len);
+    }
 }
 
 const char *Bno08x::device_error_to_str(uint8_t code) {
@@ -135,41 +276,60 @@ const char *Bno08x::device_error_to_str(uint8_t code) {
     }
 }
 
-bool Bno08x::recv(TickType_t timeout) {
-    // First read the header
+bool Bno08x::recv(TickType_t timeout, bool acquire_bus) {
+    TimeOut_t timer;
+    vTaskSetTimeOutState(&timer);
+
+    // Read out the header
     std::array<uint8_t, 4> header;
-    if (!recv_raw(header, portMAX_DELAY)) return false;
+    if (!recv_raw(header, timeout, acquire_bus)) return false;
 
     // Decode the header
-    uint16_t len = (header[0] | header[1] << 8);
+    header_in = bno08x::Header::read(header);
 
     // Catch initial errors
-    if (len & 0x8000) {
+    if (header_in.len & 0x8000) {
         ESP_LOGE(TAG, "SHTP packet continuation is not supported");
         return false;
     }
 
-    if (len < 4) {
+    if (header_in.len < 4) {
         ESP_LOGE(TAG, "SHTP packet too small");
         return false;
     }
 
-    if (len > rx_buf.size()) {
+    if (header_in.len > cargo_in.size()) {
         ESP_LOGE(TAG, "SHTP packet too big");
         return false;
     }
 
-    // Read rest of the packet
-    if (!recv_raw({rx_buf.begin(), len}, portMAX_DELAY)) return false;
+    // This is not technically an error, we can recover from this
+    if (header_in.chan >= channels.size()) {
+        ESP_LOGW(TAG, "SHTP channel too big: %d", header_in.chan);
+    } else {
+        // We can no do channel related stuff
+        if (channels[header_in.chan].seq_num_in != header_in.seq)
+            ESP_LOGW(TAG, "SHTP sequence number invalid");
 
-    ESP_LOGI(TAG, "Yeetus");
+        channels[header_in.chan].seq_num_in = header_in.seq + 2;
+    }
+
+    // Read rest of the packet
+    xTaskCheckForTimeOut(&timer, &timeout);
+    if (!recv_raw({cargo_in.begin(), header_in.len}, timeout, false))
+        return false;
 
     return true;
 }
 
-bool Bno08x::send_raw(std::span<const uint8_t> data) {
-    esp_err_t err =
-        i2c_master_transmit(dev_handle, data.data(), data.size(), -1);
+void Bno08x::acquire_bus() {
+    xEventGroupWaitBits(events, FREE_EV, pdTRUE, pdTRUE, portMAX_DELAY);
+}
+
+void Bno08x::release_bus() { xEventGroupSetBits(events, FREE_EV); }
+
+bool Bno08x::send_raw(std::span<const uint8_t> buf) {
+    esp_err_t err = i2c_master_transmit(dev_handle, buf.data(), buf.size(), -1);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "Failed to write to I2C with err: %d", err);
         return false;
@@ -178,11 +338,11 @@ bool Bno08x::send_raw(std::span<const uint8_t> data) {
     return true;
 }
 
-bool Bno08x::recv_raw(std::span<uint8_t> data, TickType_t timeout) {
-    if (!wait_for_irq(timeout)) return false;
+bool Bno08x::recv_raw(std::span<uint8_t> buf, TickType_t timeout,
+                      bool acquire_bus) {
+    if (!wait_for_irq(timeout, acquire_bus)) return false;
 
-    esp_err_t err =
-        i2c_master_receive(dev_handle, data.data(), data.size(), -1);
+    esp_err_t err = i2c_master_receive(dev_handle, buf.data(), buf.size(), -1);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "Failed to read from I2C with err: %d", err);
         return false;
@@ -191,34 +351,39 @@ bool Bno08x::recv_raw(std::span<uint8_t> data, TickType_t timeout) {
     return true;
 }
 
-bool Bno08x::wait_for_irq(TickType_t timeout) {
-    if (!is_start) return false;
+bool Bno08x::wait_for_irq(TickType_t timeout, bool acquire_bus) {
+    if (!is_init) return false;
 
     TimeOut_t timer;
     vTaskSetTimeOutState(&timer);
 
-    // First clear the event group
-    xEventGroupClearBits(irq_ev, 1);
     // Check if the signal is already low
-    while (gpio_get_level(intr) != 0) {
+    while (1) {
+        // Wait for the interrupt
+        EventBits_t bits =
+            xEventGroupWaitBits(events, acquire_bus ? IRQ_EV | FREE_EV : IRQ_EV,
+                                pdTRUE, pdTRUE, timeout);
+
+        if (gpio_get_level(intr) == 0) {
+            return true;
+        }
+
         if (xTaskCheckForTimeOut(&timer, &timeout) == pdTRUE) {
             return false;
         }
 
-        vTaskDelay(pdMS_TO_TICKS(10));
-
-        // Wait for the interrupt
-        xEventGroupWaitBits(irq_ev, 1, pdTRUE, pdTRUE, timeout);
+        // If we successfully acquired the bus, just release it
+        if (acquire_bus && (bits & FREE_EV) != 0) {
+            xEventGroupSetBits(events, FREE_EV);
+        }
     }
-
-    return true;
 }
 
 void Bno08x::on_irq(void *that) {
-    EventGroupHandle_t *irq_ev = reinterpret_cast<EventGroupHandle_t *>(that);
+    EventGroupHandle_t *events = reinterpret_cast<EventGroupHandle_t *>(that);
     BaseType_t higher_priority_task_woken = pdFALSE;
-    if (xEventGroupSetBitsFromISR(irq_ev, 1, &higher_priority_task_woken) !=
-        pdFAIL) {
+    if (xEventGroupSetBitsFromISR(events, IRQ_EV,
+                                  &higher_priority_task_woken) != pdFAIL) {
         portYIELD_FROM_ISR(higher_priority_task_woken);
     }
 }

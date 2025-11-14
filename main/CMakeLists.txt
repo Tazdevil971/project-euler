@@ -8,4 +8,5 @@ idf_component_register(
         spi_flash
         esp_driver_gpio
         esp_driver_i2c
+        bt
     INCLUDE_DIRS ".")

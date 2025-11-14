@@ -31,16 +31,17 @@ void Euler::init() {
     }
 
     // Init IMU
-    if (!bno08x.start(i2c_handle, hwmapping::BNO_IRQ, hwmapping::BNO_RESET,
+    if (!bno08x.init(i2c_handle, hwmapping::BNO_IRQ, hwmapping::BNO_RESET,
                       hwmapping::BNO_BOOTN)) {
         ESP_LOGE(TAG, "Failed to start bno08x");
+    } else {
+        // Perform actual IMU start up and boot
+        bno08x.start();
+        bno08x.enable_arvr_stabilized_rotation_vector(1000 * 1000);
     }
 }
 
 void Euler::main() {
-    for (int i = 0; i < 10; i++)
-        bno08x.foo();
-
     while (true) {
         usr_led1.on();
         vTaskDelay(1000 / portTICK_PERIOD_MS);
